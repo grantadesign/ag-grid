@@ -1,6 +1,6 @@
 /**
  * ag-grid - Advanced Data Grid / Data Table supporting Javascript / React / AngularJS / Web Components
- * @version v16.0.1
+ * @version v17.1.1
  * @link http://www.ag-grid.com/
  * @license MIT
  */
@@ -152,6 +152,8 @@ var InMemoryNodeManager = (function () {
         else {
             // do delete
             rowNode.setSelected(false);
+            // so row renderer knows to fade row out (and not reposition it)
+            rowNode.clearRowTop();
             utils_1.Utils.removeFromArray(this.rootNode.allLeafChildren, rowNode);
             this.allNodesMap[rowNode.id] = undefined;
         }
@@ -211,7 +213,11 @@ var InMemoryNodeManager = (function () {
                 else {
                     node.master = false;
                 }
-                node.expanded = node.master ? this.isExpanded(level) : false;
+                var rowGroupColumns = this.columnController.getRowGroupColumns();
+                var numRowGroupColumns = rowGroupColumns ? rowGroupColumns.length : 0;
+                // need to take row group into account when determining level
+                var masterRowLevel = level + numRowGroupColumns;
+                node.expanded = node.master ? this.isExpanded(masterRowLevel) : false;
             }
         }
         // support for backwards compatibility, canFlow is now called 'master'

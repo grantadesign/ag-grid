@@ -1,10 +1,12 @@
-// Type definitions for ag-grid v16.0.1
+// Type definitions for ag-grid v17.1.1
 // Project: http://www.ag-grid.com/
 // Definitions by: Niall Crosby <https://github.com/ag-grid/>
 import { Column } from "../entities/column";
 import { RowNode } from "../entities/rowNode";
 import { GridCell } from "../entities/gridCell";
+import { ICellEditorComp } from "./cellEditors/iCellEditor";
 import { Component } from "../widgets/component";
+import { ICellRendererComp } from "./cellRenderers/iCellRenderer";
 import { Beans } from "./beans";
 import { RowComp } from "./rowComp";
 export declare class CellComp extends Component {
@@ -30,6 +32,7 @@ export declare class CellComp extends Component {
     private cellRenderer;
     private cellRendererGui;
     private cellEditor;
+    private autoHeightCell;
     private firstRightPinned;
     private lastLeftPinned;
     private rowComp;
@@ -37,10 +40,11 @@ export declare class CellComp extends Component {
     private value;
     private valueFormatted;
     private colsSpanning;
+    private tooltip;
     private scope;
     private cellEditorVersion;
     private cellRendererVersion;
-    constructor(scope: any, beans: Beans, column: Column, rowNode: RowNode, rowComp: RowComp);
+    constructor(scope: any, beans: Beans, column: Column, rowNode: RowNode, rowComp: RowComp, autoHeightCell: boolean);
     getCreateTemplate(): string;
     afterAttached(): void;
     private onColumnHover();
@@ -55,12 +59,14 @@ export declare class CellComp extends Component {
     getInitialValueToRender(): string;
     getRenderedRow(): RowComp;
     isSuppressNavigable(): boolean;
+    getCellRenderer(): ICellRendererComp;
+    getCellEditor(): ICellEditorComp;
     refreshCell(params?: {
         suppressFlash?: boolean;
         newData?: boolean;
         forceRefresh?: boolean;
     }): void;
-    private flashCell();
+    flashCell(): void;
     private animateCell(cssName);
     private replaceContentsAfterRefresh();
     private angular1Compile();
@@ -112,6 +118,7 @@ export declare class CellComp extends Component {
     doesUserWantToCancelKeyboardEvent(event: KeyboardEvent): boolean;
     setFocusOutOnEditor(): void;
     private onNavigationKeyPressed(event, key);
+    private onShiftRangeSelect(key);
     private onTabKeyDown(event);
     private onBackspaceOrDeleteKeyPressed(key);
     private onEnterKeyDown();
@@ -120,7 +127,7 @@ export declare class CellComp extends Component {
     private onEscapeKeyDown();
     onKeyPress(event: KeyboardEvent): void;
     private onSpaceKeyPressed(event);
-    private onMouseDown();
+    private onMouseDown(mouseEvent);
     private isDoubleClickOnIPad();
     private onCellClicked(mouseEvent);
     private doIeFocusHack();

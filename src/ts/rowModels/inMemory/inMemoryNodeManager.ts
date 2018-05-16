@@ -10,6 +10,7 @@ import {ColumnController} from "../../columnController/columnController";
 
 export class InMemoryNodeManager {
 
+
     private static TOP_LEVEL = 0;
 
     private rootNode: RowNode;
@@ -192,6 +193,8 @@ export class InMemoryNodeManager {
         } else {
             // do delete
             rowNode.setSelected(false);
+            // so row renderer knows to fade row out (and not reposition it)
+            rowNode.clearRowTop();
             _.removeFromArray(this.rootNode.allLeafChildren, rowNode);
             this.allNodesMap[rowNode.id] = undefined;
         }
@@ -255,7 +258,14 @@ export class InMemoryNodeManager {
                 } else {
                     node.master = false;
                 }
-                node.expanded = node.master ? this.isExpanded(level) : false;
+
+                let rowGroupColumns = this.columnController.getRowGroupColumns();
+                let numRowGroupColumns = rowGroupColumns ? rowGroupColumns.length : 0;
+
+                // need to take row group into account when determining level
+                let masterRowLevel = level + numRowGroupColumns;
+
+                node.expanded = node.master ? this.isExpanded(masterRowLevel) : false;
             }
         }
 

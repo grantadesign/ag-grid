@@ -1,6 +1,6 @@
 /**
  * ag-grid - Advanced Data Grid / Data Table supporting Javascript / React / AngularJS / Web Components
- * @version v16.0.1
+ * @version v17.1.1
  * @link http://www.ag-grid.com/
  * @license MIT
  */
@@ -60,6 +60,7 @@ var touchListener_1 = require("../widgets/touchListener");
 var componentRecipes_1 = require("../components/framework/componentRecipes");
 var dragAndDropService_1 = require("../dragAndDrop/dragAndDropService");
 var rowDragFeature_1 = require("./rowDragFeature");
+var heightScaler_1 = require("../rendering/heightScaler");
 // in the html below, it is important that there are no white space between some of the divs, as if there is white space,
 // it won't render correctly in safari, as safari renders white space as a gap
 var HEADER_SNIPPET = '<div class="ag-header" role="row">' +
@@ -144,11 +145,18 @@ var GridPanel = (function (_super) {
         this.loadTemplate();
         this.findElements();
     };
-    GridPanel.prototype.getVerticalPixelRange = function () {
+    GridPanel.prototype.getVScrollPosition = function () {
         var container = this.getPrimaryScrollViewport();
         var result = {
             top: container.scrollTop,
             bottom: container.scrollTop + container.offsetHeight
+        };
+        return result;
+    };
+    GridPanel.prototype.getHScrollPosition = function () {
+        var result = {
+            left: this.eBodyViewport.scrollLeft,
+            right: this.eBodyViewport.scrollTop + this.eBodyViewport.offsetWidth
         };
         return result;
     };
@@ -185,14 +193,15 @@ var GridPanel = (function (_super) {
         this.addDragListeners();
         this.layout = new borderLayout_1.BorderLayout({
             center: this.eRoot,
-            dontFill: this.forPrint,
-            fillHorizontalOnly: this.autoHeight,
+            forPrint: this.forPrint,
+            autoHeight: this.autoHeight,
             name: 'eGridPanel',
             componentRecipes: this.componentRecipes
         });
         this.layout.addSizeChangeListener(this.setBodyAndHeaderHeights.bind(this));
         this.layout.addSizeChangeListener(this.setLeftAndRightBounds.bind(this));
         this.addScrollListener();
+        this.addPreventHeaderScroll();
         if (this.gridOptionsWrapper.isSuppressHorizontalScroll()) {
             this.eBodyViewport.style.overflowX = 'hidden';
         }
@@ -295,12 +304,13 @@ var GridPanel = (function (_super) {
             this.eFloatingTop, this.eFloatingBottom];
         containers.forEach(function (container) {
             var params = {
-                type: 'cell',
-                dragStartPixels: 0,
                 eElement: container,
                 onDragStart: _this.rangeController.onDragStart.bind(_this.rangeController),
                 onDragStop: _this.rangeController.onDragStop.bind(_this.rangeController),
-                onDragging: _this.rangeController.onDragging.bind(_this.rangeController)
+                onDragging: _this.rangeController.onDragging.bind(_this.rangeController),
+                // for range selection by dragging the mouse, we want to ignore the event if shift key is pressed,
+                // as shift key click is another type of range selection
+                skipMouseEvent: function (mouseEvent) { return mouseEvent.shiftKey; }
             };
             _this.dragService.addDragSource(params);
             _this.addDestroyFunc(function () { return _this.dragService.removeDragSource(params); });
@@ -349,6 +359,11 @@ var GridPanel = (function (_super) {
         this.addDestroyableEventListener(this.ePinnedRightColsViewport, 'contextmenu', listener);
         this.addDestroyableEventListener(this.ePinnedLeftColsViewport, 'contextmenu', listener);
     };
+    GridPanel.prototype.getBodyClientRect = function () {
+        if (this.eBody) {
+            return this.eBody.getBoundingClientRect();
+        }
+    };
     GridPanel.prototype.getRowForEvent = function (event) {
         var sourceElement = utils_1.Utils.getTarget(event);
         while (sourceElement) {
@@ -387,8 +402,9 @@ var GridPanel = (function (_super) {
         }
     };
     GridPanel.prototype.processMouseEvent = function (eventName, mouseEvent) {
-        if (!this.mouseEventService.isEventFromThisGrid(mouseEvent))
+        if (!this.mouseEventService.isEventFromThisGrid(mouseEvent)) {
             return;
+        }
         if (utils_1.Utils.isStopPropagationForAgGrid(mouseEvent)) {
             return;
         }
@@ -398,10 +414,12 @@ var GridPanel = (function (_super) {
             this.handleContextMenuMouseEvent(mouseEvent, null, rowComp, cellComp);
         }
         else {
-            if (cellComp)
+            if (cellComp) {
                 cellComp.onMouseEvent(eventName, mouseEvent);
-            if (rowComp)
+            }
+            if (rowComp) {
                 rowComp.onMouseEvent(eventName, mouseEvent);
+            }
         }
         this.preventDefaultOnContextMenu(mouseEvent);
     };
@@ -568,60 +586,53 @@ var GridPanel = (function (_super) {
             return;
         }
         this.paginationProxy.goToPageWithIndex(index);
-        var nodeAtIndex = this.paginationProxy.getRow(index);
-        var pixelOffset = this.paginationProxy.getPixelOffset();
-        var rowTopPixel = nodeAtIndex.rowTop - pixelOffset;
-        var rowBottomPixel = rowTopPixel + nodeAtIndex.rowHeight;
-        var vRange = this.getVerticalPixelRange();
-        var vRangeTop = vRange.top;
-        var vRangeBottom = vRange.bottom;
-        var scrollShowing = this.isHorizontalScrollShowing();
-        if (scrollShowing) {
-            vRangeBottom -= this.scrollWidth;
+        var rowNode = this.paginationProxy.getRow(index);
+        var paginationOffset = this.paginationProxy.getPixelOffset();
+        var rowTopPixel = rowNode.rowTop - paginationOffset;
+        var rowBottomPixel = rowTopPixel + rowNode.rowHeight;
+        var scrollPosition = this.getVScrollPosition();
+        var heightOffset = this.heightScaler.getOffset();
+        var vScrollTop = scrollPosition.top + heightOffset;
+        var vScrollBottom = scrollPosition.bottom + heightOffset;
+        var hScrollShowing = this.isHorizontalScrollShowing();
+        if (hScrollShowing) {
+            vScrollBottom -= this.scrollWidth;
         }
-        var rowToHighlightHeight = rowBottomPixel - rowTopPixel;
-        var viewportHeight = vRangeBottom - vRangeTop;
-        var halfScreenHeight = (viewportHeight / 2) + (rowToHighlightHeight / 2);
-        var eViewportToScroll = this.getPrimaryScrollViewport();
-        var newScrollPosition;
-        switch (position) {
-            case 'top':
-                newScrollPosition = rowTopPixel;
-                break;
-            case 'bottom':
-                newScrollPosition = rowBottomPixel - viewportHeight;
-                break;
-            case 'middle':
-                newScrollPosition = halfScreenHeight;
-                // The if/else logic here protects us from over scrolling
-                // ie: Trying to scroll past the row (ie ensureNodeVisible (0, 'middle'))
-                newScrollPosition = newScrollPosition > rowTopPixel ? rowTopPixel : newScrollPosition;
-                break;
-            default:
-                newScrollPosition = rowTopPixel;
-                var viewportScrolledPastRow = vRangeTop > rowTopPixel;
-                var viewportScrolledBeforeRow = vRangeBottom < rowBottomPixel;
-                if (viewportScrolledPastRow) {
-                    // if row is before, scroll up with row at top
-                    newScrollPosition = rowTopPixel;
-                }
-                else if (viewportScrolledBeforeRow) {
-                    // if row is below, scroll down with row at bottom
-                    var viewportHeight_1 = vRangeBottom - vRangeTop;
-                    newScrollPosition = rowBottomPixel - viewportHeight_1;
-                }
-                else {
-                    // row already in view, and top/middle/bottom not specified, so do nothing.
-                    newScrollPosition = null;
-                }
-                break;
+        var viewportHeight = vScrollBottom - vScrollTop;
+        var newScrollPosition = null;
+        // work out the pixels for top, middle and bottom up front,
+        // make the if/else below easier to read
+        var pxTop = this.heightScaler.getScrollPositionForPixel(rowTopPixel);
+        var pxBottom = this.heightScaler.getScrollPositionForPixel(rowBottomPixel - viewportHeight);
+        var pxMiddle = (pxTop + pxBottom) / 2;
+        // make sure if middle, the row is not outside the top of the grid
+        if (pxMiddle > rowTopPixel) {
+            pxMiddle = rowTopPixel;
         }
-        // this means the row is already in view, and we don't need to scroll
-        if (newScrollPosition === null) {
-            return;
+        var rowBelowViewport = vScrollTop > rowTopPixel;
+        var rowAboveViewport = vScrollBottom < rowBottomPixel;
+        if (position === 'top') {
+            newScrollPosition = pxTop;
         }
-        eViewportToScroll.scrollTop = newScrollPosition;
-        this.rowRenderer.redrawAfterScroll();
+        else if (position === 'bottom') {
+            newScrollPosition = pxBottom;
+        }
+        else if (position === 'middle') {
+            newScrollPosition = pxMiddle;
+        }
+        else if (rowBelowViewport) {
+            // if row is before, scroll up with row at top
+            newScrollPosition = pxTop;
+        }
+        else if (rowAboveViewport) {
+            // if row is below, scroll down with row at bottom
+            newScrollPosition = pxBottom;
+        }
+        if (newScrollPosition !== null) {
+            var eViewportToScroll = this.getPrimaryScrollViewport();
+            eViewportToScroll.scrollTop = newScrollPosition;
+            this.rowRenderer.redrawAfterScroll();
+        }
     };
     GridPanel.prototype.getPrimaryScrollViewport = function () {
         if (this.enableRtl && this.columnController.isPinningLeft()) {
@@ -716,6 +727,9 @@ var GridPanel = (function (_super) {
     };
     GridPanel.prototype.setMarginOnFullWidthCellContainer = function () {
         if (this.forPrint) {
+            return;
+        }
+        if (this.gridOptionsWrapper.isNativeScroll()) {
             return;
         }
         // if either right or bottom scrollbars are showing, we need to make sure the
@@ -994,7 +1008,7 @@ var GridPanel = (function (_super) {
                 this.eFloatingTop, this.eFloatingBottom, this.eFullWidthCellContainer
             ];
             this.rowContainerComponents = {
-                body: new rowContainerComponent_1.RowContainerComponent({ eContainer: this.eBodyContainer, eViewport: this.eBodyViewport, body: true }),
+                body: new rowContainerComponent_1.RowContainerComponent({ eContainer: this.eBodyContainer, eViewport: this.eBodyViewport }),
                 fullWidth: new rowContainerComponent_1.RowContainerComponent({ eContainer: this.eFullWidthCellContainer, hideWhenNoChildren: true, eViewport: this.eFullWidthCellViewport }),
                 pinnedLeft: new rowContainerComponent_1.RowContainerComponent({ eContainer: this.ePinnedLeftColsContainer, eViewport: this.ePinnedLeftColsViewport }),
                 pinnedRight: new rowContainerComponent_1.RowContainerComponent({ eContainer: this.ePinnedRightColsContainer, eViewport: this.ePinnedRightColsViewport }),
@@ -1007,14 +1021,32 @@ var GridPanel = (function (_super) {
                 floatingBottomPinnedRight: new rowContainerComponent_1.RowContainerComponent({ eContainer: this.ePinnedRightFloatingBottom }),
                 floatingBottomFullWith: new rowContainerComponent_1.RowContainerComponent({ eContainer: this.eFloatingBottomFullWidthCellContainer, hideWhenNoChildren: true }),
             };
-            this.addMouseWheelEventListeners();
+            if (this.gridOptionsWrapper.isNativeScroll()) {
+                utils_1.Utils.addCssClass(this.eRoot, 'ag-native-scroll');
+            }
+            else {
+                utils_1.Utils.addCssClass(this.eRoot, 'ag-hacked-scroll');
+            }
             this.suppressScrollOnFloatingRow();
+            this.setupRowAnimationCssClass();
         }
         utils_1.Utils.iterateObject(this.rowContainerComponents, function (key, container) {
             if (container) {
                 _this.context.wireBean(container);
             }
         });
+    };
+    GridPanel.prototype.setupRowAnimationCssClass = function () {
+        var _this = this;
+        var listener = function () {
+            // we don't want to use row animation if scaling, as rows jump strangely as you scroll,
+            // when scaling and doing row animation.
+            var animateRows = _this.gridOptionsWrapper.isAnimateRows() && !_this.heightScaler.isScaling();
+            utils_1.Utils.addOrRemoveCssClass(_this.eBody, 'ag-row-animation', animateRows);
+            utils_1.Utils.addOrRemoveCssClass(_this.eBody, 'ag-row-no-animation', !animateRows);
+        };
+        listener();
+        this.addDestroyableEventListener(this.eventService, events_1.Events.EVENT_HEIGHT_SCALE_CHANGED, listener);
     };
     // when editing a pinned row, if the cell is half outside the scrollable area, the browser can
     // scroll the column into view. we do not want this, the pinned sections should never scroll.
@@ -1145,11 +1177,6 @@ var GridPanel = (function (_super) {
             return;
         }
         var changeDetected = false;
-        // if we are v scrolling, then one of these will have the scroll position.
-        // we us this inside the if(changedDetected), so we don't always use it, however
-        // it is changed when we make a pinned panel not visible, so we have to check it
-        // before we change display on the pinned panels
-        var scrollTop = Math.max(this.eBodyViewport.scrollTop, this.ePinnedLeftColsViewport.scrollTop, this.ePinnedRightColsViewport.scrollTop);
         var showLeftPinned = this.columnController.isPinningLeft();
         if (showLeftPinned !== this.pinningLeft) {
             this.pinningLeft = showLeftPinned;
@@ -1165,26 +1192,49 @@ var GridPanel = (function (_super) {
             changeDetected = true;
         }
         if (changeDetected) {
-            var bodyVScrollActive = this.isBodyVerticalScrollActive();
-            this.eBodyViewport.style.overflowY = bodyVScrollActive ? 'auto' : 'hidden';
-            // the body either uses it's scroll (when scrolling) or it's style.top
-            // (when following the scroll of a pinned section), so we need to set it
-            // back when changing from one to the other
-            if (bodyVScrollActive) {
-                this.setFakeScroll(this.eBodyContainer, 0);
-                // this.eBodyContainer.style.top = '0px';
+            if (this.gridOptionsWrapper.isNativeScroll()) {
+                this.setPinnedContainersVisibleNew();
             }
             else {
-                this.eBodyViewport.scrollTop = 0;
+                this.setPinnedContainersVisibleOld();
             }
-            // when changing the primary scroll viewport, we copy over the scroll position,
-            // eg if body was getting scrolled and we were at position 100px, then we start
-            // pinning and pinned viewport is now the primary, we need to set it to 100px
-            var primaryScrollViewport = this.getPrimaryScrollViewport();
-            primaryScrollViewport.scrollTop = scrollTop;
-            // this adjusts the scroll position of all the faking panels. they should already
-            // be correct except body which has potentially just turned to be fake.
-            this.fakeVerticalScroll(scrollTop);
+        }
+    };
+    GridPanel.prototype.setPinnedContainersVisibleOld = function () {
+        var bodyVScrollActive = this.isBodyVerticalScrollActive();
+        this.eBodyViewport.style.overflowY = bodyVScrollActive ? 'auto' : 'hidden';
+        // the body either uses it's scroll (when scrolling) or it's style.top
+        // (when following the scroll of a pinned section), so we need to set it
+        // back when changing from one to the other
+        if (bodyVScrollActive) {
+            this.setFakeScroll(this.eBodyContainer, 0);
+            // this.eBodyContainer.style.top = '0px';
+        }
+        else {
+            this.eBodyViewport.scrollTop = 0;
+        }
+        // if we are v scrolling, then one of these will have the scroll position.
+        // we us this inside the if(changedDetected), so we don't always use it, however
+        // it is changed when we make a pinned panel not visible, so we have to check it
+        // before we change display on the pinned panels
+        var scrollTop = Math.max(this.eBodyViewport.scrollTop, this.ePinnedLeftColsViewport.scrollTop, this.ePinnedRightColsViewport.scrollTop);
+        // when changing the primary scroll viewport, we copy over the scroll position,
+        // eg if body was getting scrolled and we were at position 100px, then we start
+        // pinning and pinned viewport is now the primary, we need to set it to 100px
+        var primaryScrollViewport = this.getPrimaryScrollViewport();
+        primaryScrollViewport.scrollTop = scrollTop;
+        // this adjusts the scroll position of all the faking panels. they should already
+        // be correct except body which has potentially just turned to be fake.
+        this.fakeVerticalScroll(scrollTop);
+    };
+    GridPanel.prototype.setPinnedContainersVisibleNew = function () {
+        if (this.enableRtl) {
+            utils_1.Utils.addOrRemoveCssClass(this.eBodyViewport, 'ag-hide-scroll-bar', this.pinningLeft);
+            utils_1.Utils.addCssClass(this.ePinnedRightColsViewport, 'ag-hide-scroll-bar');
+        }
+        else {
+            utils_1.Utils.addOrRemoveCssClass(this.eBodyViewport, 'ag-hide-scroll-bar', this.pinningRight);
+            utils_1.Utils.addCssClass(this.ePinnedLeftColsViewport, 'ag-hide-scroll-bar');
         }
     };
     // init, layoutChanged, floatingDataChanged, headerHeightChanged
@@ -1273,7 +1323,7 @@ var GridPanel = (function (_super) {
         }
     };
     GridPanel.prototype.setVerticalScrollPosition = function (vScrollPosition) {
-        this.eBodyViewport.scrollTop = vScrollPosition;
+        this.getPrimaryScrollViewport().scrollTop = vScrollPosition;
     };
     // tries to scroll by pixels, but returns what the result actually was
     GridPanel.prototype.scrollHorizontally = function (pixels) {
@@ -1284,17 +1334,45 @@ var GridPanel = (function (_super) {
     };
     // tries to scroll by pixels, but returns what the result actually was
     GridPanel.prototype.scrollVertically = function (pixels) {
-        var oldScrollPosition = this.eBodyViewport.scrollTop;
+        var viewport = this.getPrimaryScrollViewport();
+        var oldScrollPosition = viewport.scrollTop;
         this.setVerticalScrollPosition(oldScrollPosition + pixels);
-        var newScrollPosition = this.eBodyViewport.scrollTop;
+        var newScrollPosition = viewport.scrollTop;
         return newScrollPosition - oldScrollPosition;
     };
-    GridPanel.prototype.addScrollListener = function () {
+    // if the user is in floating filter and hits tab a few times, the header can
+    // end up scrolling to show items off the screen, leaving the grid and header
+    // and the grid columns no longer in sync.
+    GridPanel.prototype.addPreventHeaderScroll = function () {
         var _this = this;
+        if (!this.eHeaderViewport) {
+            return;
+        }
+        this.addDestroyableEventListener(this.eHeaderViewport, 'scroll', function () {
+            // if the header scrolls, the header will be out of sync. so we reset the
+            // header scroll, and then scroll the body, which will in turn set the offset
+            // on the header, giving the impression that the header scrolled as expected.
+            var scrollLeft = _this.eHeaderViewport.scrollLeft;
+            if (scrollLeft !== 0) {
+                _this.scrollHorizontally(scrollLeft);
+                _this.eHeaderViewport.scrollLeft = 0;
+            }
+        });
+    };
+    GridPanel.prototype.addScrollListener = function () {
         // if printing, then no scrolling, so no point in listening for scroll events
         if (this.forPrint) {
             return;
         }
+        if (this.gridOptionsWrapper.isNativeScroll()) {
+            this.doScrollingNativeWay();
+        }
+        else {
+            this.doScrollingOldWay();
+        }
+    };
+    GridPanel.prototype.doScrollingOldWay = function () {
+        var _this = this;
         this.addDestroyableEventListener(this.eBodyViewport, 'scroll', this.onBodyScroll.bind(this));
         // below we add two things:
         // pinnedScrollListener -> when pinned panel with scrollbar gets scrolled, it updates body and other pinned
@@ -1319,6 +1397,41 @@ var GridPanel = (function (_super) {
         };
         this.addDestroyableEventListener(this.eBodyViewport, 'scroll', suppressCenterScroll);
         this.addIEPinFix(onPinnedRightVerticalScroll, onPinnedLeftVerticalScroll);
+        this.addMouseWheelEventListeners();
+    };
+    GridPanel.prototype.doScrollingNativeWay = function () {
+        var _this = this;
+        this.addDestroyableEventListener(this.eBodyViewport, 'scroll', function () {
+            _this.onBodyHorizontalScroll();
+            _this.onAnyBodyScroll(_this.eBodyViewport);
+        });
+        this.addDestroyableEventListener(this.ePinnedRightColsViewport, 'scroll', this.onAnyBodyScroll.bind(this, this.ePinnedRightColsViewport));
+        this.addDestroyableEventListener(this.ePinnedLeftColsViewport, 'scroll', this.onAnyBodyScroll.bind(this, this.ePinnedLeftColsViewport));
+        this.addDestroyableEventListener(this.eFullWidthCellViewport, 'scroll', this.onAnyBodyScroll.bind(this, this.eFullWidthCellViewport));
+    };
+    GridPanel.prototype.onAnyBodyScroll = function (source) {
+        var now = new Date().getTime();
+        var diff = now - this.lastVScrollTime;
+        var elementIsNotControllingTheScroll = source !== this.lastVScrollElement && diff < 100;
+        if (elementIsNotControllingTheScroll) {
+            return;
+        }
+        this.lastVScrollElement = source;
+        this.lastVScrollTime = now;
+        var scrollTop = source.scrollTop;
+        if (this.useAnimationFrame) {
+            if (this.nextScrollTop !== scrollTop) {
+                this.nextScrollTop = scrollTop;
+                this.animationFrameService.schedule();
+            }
+        }
+        else {
+            if (scrollTop !== this.scrollTop) {
+                this.scrollTop = scrollTop;
+                this.fakeVerticalScroll(scrollTop);
+                this.redrawRowsAfterScroll();
+            }
+        }
     };
     GridPanel.prototype.onBodyScroll = function () {
         this.onBodyHorizontalScroll();
@@ -1467,28 +1580,45 @@ var GridPanel = (function (_super) {
     // we say fake scroll as only one panel (left, right or body) has scrolls,
     // the other panels mimic the scroll by getting it's top position updated.
     GridPanel.prototype.fakeVerticalScroll = function (position) {
-        if (this.enableRtl) {
-            // RTL
-            // if pinning left, then body scroll is faking
-            var pinningLeft = this.columnController.isPinningLeft();
-            if (pinningLeft) {
-                this.setFakeScroll(this.eBodyContainer, position);
+        if (this.gridOptionsWrapper.isNativeScroll()) {
+            if (this.lastVScrollElement !== this.eBodyViewport) {
+                this.eBodyViewport.scrollTop = position;
             }
-            // right is always faking
-            this.setFakeScroll(this.ePinnedRightColsContainer, position);
+            if (this.lastVScrollElement !== this.ePinnedLeftColsViewport && this.pinningLeft) {
+                this.ePinnedLeftColsViewport.scrollTop = position;
+            }
+            if (this.lastVScrollElement !== this.ePinnedRightColsViewport && this.pinningRight) {
+                this.ePinnedRightColsViewport.scrollTop = position;
+            }
+            if (this.lastVScrollElement !== this.eFullWidthCellViewport) {
+                this.eFullWidthCellViewport.scrollTop = position;
+            }
+            this.redrawRowsAfterScroll();
         }
         else {
-            // LTR
-            // if pinning right, then body scroll is faking
-            var pinningRight = this.columnController.isPinningRight();
-            if (pinningRight) {
-                this.setFakeScroll(this.eBodyContainer, position);
+            if (this.enableRtl) {
+                // RTL
+                // if pinning left, then body scroll is faking
+                var pinningLeft = this.columnController.isPinningLeft();
+                if (pinningLeft) {
+                    this.setFakeScroll(this.eBodyContainer, position);
+                }
+                // right is always faking
+                this.setFakeScroll(this.ePinnedRightColsContainer, position);
             }
-            // left is always faking
-            this.setFakeScroll(this.ePinnedLeftColsContainer, position);
+            else {
+                // LTR
+                // if pinning right, then body scroll is faking
+                var pinningRight = this.columnController.isPinningRight();
+                if (pinningRight) {
+                    this.setFakeScroll(this.eBodyContainer, position);
+                }
+                // left is always faking
+                this.setFakeScroll(this.ePinnedLeftColsContainer, position);
+            }
+            // always scroll fullWidth container, as this is never responsible for a scroll
+            this.setFakeScroll(this.eFullWidthCellContainer, position);
         }
-        // always scroll fullWidth container, as this is never responsible for a scroll
-        this.setFakeScroll(this.eFullWidthCellContainer, position);
     };
     GridPanel.prototype.setFakeScroll = function (eContainer, pixels) {
         eContainer.style.top = -pixels + 'px';
@@ -1604,6 +1734,10 @@ var GridPanel = (function (_super) {
         context_1.Autowired('dragAndDropService'),
         __metadata("design:type", dragAndDropService_1.DragAndDropService)
     ], GridPanel.prototype, "dragAndDropService", void 0);
+    __decorate([
+        context_1.Autowired('heightScaler'),
+        __metadata("design:type", heightScaler_1.HeightScaler)
+    ], GridPanel.prototype, "heightScaler", void 0);
     __decorate([
         __param(0, context_1.Qualifier('loggerFactory')),
         __metadata("design:type", Function),

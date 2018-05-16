@@ -1,6 +1,6 @@
 /**
  * ag-grid - Advanced Data Grid / Data Table supporting Javascript / React / AngularJS / Web Components
- * @version v16.0.1
+ * @version v17.1.1
  * @link http://www.ag-grid.com/
  * @license MIT
  */
@@ -54,7 +54,8 @@ var DateFilter = (function (_super) {
         var _this = this;
         _super.prototype.initialiseFilterBodyUi.call(this);
         var dateComponentParams = {
-            onDateChanged: this.onDateChanged.bind(this)
+            onDateChanged: this.onDateChanged.bind(this),
+            filterParams: this.filterParams
         };
         this.componentRecipes.newDateComponent(dateComponentParams).then(function (dateToComponent) {
             _this.dateToComponent = dateToComponent;
@@ -143,8 +144,9 @@ var DateFilter = (function (_super) {
         this.setFilterType(filterType);
     };
     DateFilter.removeTimezone = function (from) {
-        if (!from)
+        if (!from) {
             return null;
+        }
         return new Date(from.getFullYear(), from.getMonth(), from.getDate());
     };
     __decorate([
@@ -169,8 +171,13 @@ var DefaultDateComponent = (function (_super) {
     }
     DefaultDateComponent.prototype.init = function (params) {
         this.eDateInput = this.getGui();
-        if (utils_1.Utils.isBrowserChrome()) {
-            this.eDateInput.type = 'date';
+        if (utils_1.Utils.isBrowserChrome() || params.filterParams.browserDatePicker) {
+            if (utils_1.Utils.isBrowserIE()) {
+                console.warn('ag-grid: browserDatePicker is specified to true, but it is not supported in IE 11, reverting to plain text date picker');
+            }
+            else {
+                this.eDateInput.type = 'date';
+            }
         }
         this.listener = params.onDateChanged;
         this.addGuiEventListener('input', this.listener);

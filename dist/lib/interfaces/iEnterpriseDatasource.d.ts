@@ -1,6 +1,7 @@
-// Type definitions for ag-grid v16.0.1
+// Type definitions for ag-grid v17.1.1
 // Project: http://www.ag-grid.com/
 // Definitions by: Niall Crosby <https://github.com/ag-grid/>
+import { RowNode } from "../entities/rowNode";
 export interface ColumnVO {
     id: string;
     displayName: string;
@@ -20,9 +21,11 @@ export interface IEnterpriseGetRowsRequest {
 }
 export interface IEnterpriseGetRowsParams {
     request: IEnterpriseGetRowsRequest;
+    parentNode: RowNode;
     successCallback(rowsThisPage: any[], lastRow: number): void;
     failCallback(): void;
 }
 export interface IEnterpriseDatasource {
     getRows(params: IEnterpriseGetRowsParams): void;
+    destroy?(): void;
 }

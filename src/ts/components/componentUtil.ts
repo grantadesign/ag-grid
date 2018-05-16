@@ -82,10 +82,7 @@ ComponentUtil {
         }
     }
 
-    // change this method, the caller should know if it's initialised or not, plus 'initialised'
-    // is not relevant for all component types. maybe pass in the api and columnApi instead???
     public static processOnChange(changes: any, gridOptions: GridOptions, api: GridApi, columnApi: ColumnApi): void {
-        //if (!component._initialised || !changes) { return; }
         if (!changes) {
             return;
         }
@@ -157,7 +154,7 @@ ComponentUtil {
         }
 
         if (changes.pivotMode) {
-            columnApi.setPivotMode(ComponentUtil.toBoolean(changes.pivotMode.currentValue), "gridOptionsChanged");
+            columnApi.setPivotMode(ComponentUtil.toBoolean(changes.pivotMode.currentValue));
         }
 
         if (changes.groupRemoveSingleChildren) {
@@ -204,7 +201,7 @@ ComponentUtil {
     }
 }
 
-_.iterateObject(Events, function(key, value) {
+_.iterateObject<any>(Events, function(key, value) {
     ComponentUtil.EVENTS.push(value);
 });
 

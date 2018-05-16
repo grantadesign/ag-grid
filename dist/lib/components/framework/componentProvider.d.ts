@@ -1,4 +1,4 @@
-// Type definitions for ag-grid v16.0.1
+// Type definitions for ag-grid v17.1.1
 // Project: http://www.ag-grid.com/
 // Definitions by: Niall Crosby <https://github.com/ag-grid/>
 import { IComponent } from "../../interfaces/iComponent";
@@ -29,7 +29,6 @@ export interface DeprecatedComponentName {
 }
 export declare class ComponentProvider {
     private gridOptions;
-    private context;
     private agGridDefaults;
     private agDeprecatedNames;
     private jsComponents;

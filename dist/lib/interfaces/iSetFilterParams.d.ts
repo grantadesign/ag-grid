@@ -1,10 +1,12 @@
-// Type definitions for ag-grid v16.0.1
+// Type definitions for ag-grid v17.1.1
 // Project: http://www.ag-grid.com/
 // Definitions by: Niall Crosby <https://github.com/ag-grid/>
 import { IFilterParams } from "./iFilter";
 import { ICellRendererComp, ICellRendererFunc } from "../rendering/cellRenderers/iCellRenderer";
+import { ColDef } from "../entities/colDef";
 export interface SetFilterValuesFuncParams {
     success: (values: string[]) => void;
+    colDef: ColDef;
 }
 export declare type SetFilterValuesFunc = (params: SetFilterValuesFuncParams) => void;
 export declare type SetFilterValues = SetFilterValuesFunc | any[];

@@ -135,6 +135,13 @@ export class DragService {
     // gets called whenever mouse down on any drag source
     private onMouseDown(params: DragListenerParams, mouseEvent: MouseEvent): void {
 
+        // we ignore when shift key is pressed. this is for the range selection, as when
+        // user shift-clicks a cell, this should not be interpreted as the start of a drag.
+        // if (mouseEvent.shiftKey) { return; }
+        if (params.skipMouseEvent) {
+            if (params.skipMouseEvent(mouseEvent)) { return; }
+        }
+
         // if there are two elements with parent / child relationship, and both are draggable,
         // when we drag the child, we should NOT drag the parent. an example of this is row moving
         // and range selection - row moving should get preference when use drags the rowDrag component.
@@ -297,12 +304,12 @@ interface DragSourceAndListener {
 }
 
 export interface DragListenerParams {
-    /** Used in the dragStarted and dragStopped events */
-    type: string;
     /** After how many pixels of dragging should the drag operation start. Default is 4px. */
     dragStartPixels?: number;
     /** Dom element to add the drag handling to */
     eElement: HTMLElement;
+    /** Some places may wish to ignore certain events, eg range selection ignores shift clicks */
+    skipMouseEvent?: (mouseEvent: MouseEvent) => boolean;
     /** Callback for drag starting */
     onDragStart: (mouseEvent: MouseEvent|Touch) => void;
     /** Callback for drag stopping */

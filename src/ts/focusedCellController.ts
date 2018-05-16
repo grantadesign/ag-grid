@@ -53,7 +53,7 @@ export class FocusedCellController {
         if (this.gridOptionsWrapper.isSuppressFocusAfterRefresh()) {
             return null;
         }
-        
+
         if (!this.focusedCell) {
             return null;
         }
@@ -83,10 +83,6 @@ export class FocusedCellController {
     }
 
     public setFocusedCell(rowIndex: number, colKey: string|Column, floating: string, forceBrowserFocus = false): void {
-        if (this.gridOptionsWrapper.isSuppressCellSelection()) {
-            return;
-        }
-
         let column = _.makeNull(this.columnController.getGridColumn(colKey));
         this.focusedCell = new GridCell({rowIndex: rowIndex,
                                         floating: _.makeNull(floating),

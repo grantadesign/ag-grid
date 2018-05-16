@@ -1,6 +1,6 @@
 /**
  * ag-grid - Advanced Data Grid / Data Table supporting Javascript / React / AngularJS / Web Components
- * @version v16.0.1
+ * @version v17.1.1
  * @link http://www.ag-grid.com/
  * @license MIT
  */
@@ -42,22 +42,112 @@ var Component = (function (_super) {
         this.instantiateRecurse(this.getGui(), context);
     };
     Component.prototype.instantiateRecurse = function (parentNode, context) {
-        var childCount = parentNode.childNodes ? parentNode.childNodes.length : 0;
-        for (var i = 0; i < childCount; i++) {
-            var childNode = parentNode.childNodes[i];
-            var newComponent = context.createComponent(childNode);
-            if (newComponent) {
-                this.swapComponentForNode(newComponent, parentNode, childNode);
+        var _this = this;
+        // we MUST take a copy of the list first, as the 'swapComponentForNode' adds comments into the DOM
+        // which messes up the traversal order of the children.
+        var childNodeList = utils_1.Utils.copyNodeList(parentNode.childNodes);
+        childNodeList.forEach(function (childNode) {
+            var childComp = context.createComponent(childNode, function (childComp) {
+                var attrList = _this.getAttrLists(childNode);
+                _this.copyAttributesFromNode(attrList, childComp.getGui());
+                _this.createChildAttributes(attrList, childComp);
+                _this.addEventListenersToComponent(attrList, childComp);
+            });
+            if (childComp) {
+                _this.swapComponentForNode(childComp, parentNode, childNode);
             }
             else {
                 if (childNode.childNodes) {
-                    this.instantiateRecurse(childNode, context);
+                    _this.instantiateRecurse(childNode, context);
+                }
+                if (childNode instanceof HTMLElement) {
+                    var attrList = _this.getAttrLists(childNode);
+                    _this.addEventListenersToElement(attrList, childNode);
                 }
             }
-        }
+        });
+    };
+    Component.prototype.getAttrLists = function (child) {
+        var res = {
+            bindings: [],
+            events: [],
+            normal: []
+        };
+        utils_1.Utils.iterateNamedNodeMap(child.attributes, function (name, value) {
+            var firstCharacter = name.substr(0, 1);
+            if (firstCharacter === '(') {
+                var eventName = name.replace('(', '').replace(')', '');
+                res.events.push({
+                    name: eventName,
+                    value: value
+                });
+            }
+            else if (firstCharacter === '[') {
+                var bindingName = name.replace('[', '').replace(']', '');
+                res.bindings.push({
+                    name: bindingName,
+                    value: value
+                });
+            }
+            else {
+                res.normal.push({
+                    name: name,
+                    value: value
+                });
+            }
+        });
+        return res;
+    };
+    Component.prototype.addEventListenersToElement = function (attrLists, element) {
+        var _this = this;
+        this.addEventListenerCommon(attrLists, function (eventName, listener) {
+            _this.addDestroyableEventListener(element, eventName, listener);
+        });
+    };
+    Component.prototype.addEventListenersToComponent = function (attrLists, component) {
+        var _this = this;
+        this.addEventListenerCommon(attrLists, function (eventName, listener) {
+            _this.addDestroyableEventListener(component, eventName, listener);
+        });
+    };
+    Component.prototype.addEventListenerCommon = function (attrLists, callback) {
+        var _this = this;
+        var methodAliases = this.getAgComponentMetaData('methods');
+        attrLists.events.forEach(function (nameValue) {
+            var methodName = nameValue.value;
+            var methodAlias = utils_1.Utils.find(methodAliases, 'alias', methodName);
+            var methodNameToUse = utils_1.Utils.exists(methodAlias) ? methodAlias.methodName : methodName;
+            var listener = _this[methodNameToUse];
+            if (typeof listener !== 'function') {
+                console.warn('ag-Grid: count not find callback ' + methodName);
+                return;
+            }
+            var eventCamelCase = utils_1.Utils.hyphenToCamelCase(nameValue.name);
+            callback(eventCamelCase, listener.bind(_this));
+        });
+    };
+    Component.prototype.createChildAttributes = function (attrLists, child) {
+        var _this = this;
+        var childAttributes = {};
+        attrLists.normal.forEach(function (nameValue) {
+            var nameCamelCase = utils_1.Utils.hyphenToCamelCase(nameValue.name);
+            childAttributes[nameCamelCase] = nameValue.value;
+        });
+        attrLists.bindings.forEach(function (nameValue) {
+            var nameCamelCase = utils_1.Utils.hyphenToCamelCase(nameValue.name);
+            childAttributes[nameCamelCase] = _this[nameValue.value];
+        });
+        child.props = childAttributes;
+    };
+    Component.prototype.copyAttributesFromNode = function (attrLists, childNode) {
+        attrLists.normal.forEach(function (nameValue) {
+            childNode.setAttribute(nameValue.name, nameValue.value);
+        });
     };
     Component.prototype.swapComponentForNode = function (newComponent, parentNode, childNode) {
-        parentNode.replaceChild(newComponent.getGui(), childNode);
+        var eComponent = newComponent.getGui();
+        parentNode.replaceChild(eComponent, childNode);
+        parentNode.insertBefore(document.createComment(childNode.nodeName), eComponent);
         this.childComponents.push(newComponent);
         this.swapInComponentForQuerySelectors(newComponent, childNode);
     };
@@ -86,8 +176,6 @@ var Component = (function (_super) {
         this.eGui.__agComponent = this;
         this.addAnnotatedEventListeners();
         this.wireQuerySelectors();
-    };
-    Component.prototype.attributesSet = function () {
     };
     Component.prototype.wireQuerySelectors = function () {
         var _this = this;
@@ -129,22 +217,31 @@ var Component = (function (_super) {
         if (!this.eGui) {
             return;
         }
+        var listenerMethods = this.getAgComponentMetaData('listenerMethods');
+        if (utils_1.Utils.missingOrEmpty(listenerMethods)) {
+            return;
+        }
+        if (!this.annotatedEventListeners) {
+            this.annotatedEventListeners = [];
+        }
+        listenerMethods.forEach(function (eventListener) {
+            var listener = _this[eventListener.methodName].bind(_this);
+            _this.eGui.addEventListener(eventListener.eventName, listener);
+            _this.annotatedEventListeners.push({ eventName: eventListener.eventName, listener: listener });
+        });
+    };
+    Component.prototype.getAgComponentMetaData = function (key) {
+        var res = [];
         var thisProto = Object.getPrototypeOf(this);
         while (thisProto != null) {
             var metaData = thisProto.__agComponentMetaData;
             var currentProtoName = (thisProto.constructor).name;
-            if (metaData && metaData[currentProtoName] && metaData[currentProtoName].listenerMethods) {
-                if (!this.annotatedEventListeners) {
-                    this.annotatedEventListeners = [];
-                }
-                metaData[currentProtoName].listenerMethods.forEach(function (eventListener) {
-                    var listener = _this[eventListener.methodName].bind(_this);
-                    _this.eGui.addEventListener(eventListener.eventName, listener);
-                    _this.annotatedEventListeners.push({ eventName: eventListener.eventName, listener: listener });
-                });
+            if (metaData && metaData[currentProtoName] && metaData[currentProtoName][key]) {
+                res = res.concat(metaData[currentProtoName][key]);
             }
             thisProto = Object.getPrototypeOf(thisProto);
         }
+        return res;
     };
     Component.prototype.removeAnnotatedEventListeners = function () {
         var _this = this;

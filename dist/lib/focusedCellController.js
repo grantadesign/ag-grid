@@ -1,6 +1,6 @@
 /**
  * ag-grid - Advanced Data Grid / Data Table supporting Javascript / React / AngularJS / Web Components
- * @version v16.0.1
+ * @version v17.1.1
  * @link http://www.ag-grid.com/
  * @license MIT
  */
@@ -79,9 +79,6 @@ var FocusedCellController = (function () {
     };
     FocusedCellController.prototype.setFocusedCell = function (rowIndex, colKey, floating, forceBrowserFocus) {
         if (forceBrowserFocus === void 0) { forceBrowserFocus = false; }
-        if (this.gridOptionsWrapper.isSuppressCellSelection()) {
-            return;
-        }
         var column = utils_1.Utils.makeNull(this.columnController.getGridColumn(colKey));
         this.focusedCell = new gridCell_1.GridCell({ rowIndex: rowIndex,
             floating: utils_1.Utils.makeNull(floating),
