@@ -1,0 +1,40 @@
+{
+  "name": "ag-grid-vue",
+  "description": "ag-Grid Vue Component",
+  "version": "18.1.0",
+  "author": "Sean Landsman <sean@thelandsmans.com>",
+  "license": "MIT",
+  "main": "main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ag-grid/ag-grid.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ag-grid/ag-grid/issues"
+  },
+  "homepage": "http://www.ag-grid.com/",
+  "scripts": {
+    "build": "gulp"
+  },
+  "keywords": [
+    "grid",
+    "data",
+    "table",
+    "vue",
+    "vuejs"
+  ],
+  "peerDependencies": {
+    "ag-grid": "^18.1.0",
+    "vue": "^2.0.0"
+  },
+  "devDependencies": {
+    "ag-grid": "^18.1.0",
+    "babel-core": "^6.0.0",
+    "babel-loader": "^6.0.0",
+    "babel-preset-es2015": "^6.0.0",
+    "gulp": "^3.9.1",
+    "gulp-babel": "^6.1.2",
+    "gulp-rename": "^1.2.2",
+    "vue": "^2.0.0"
+  }
+}
